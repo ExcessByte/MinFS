@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,8 +16,16 @@ import (
 	"syscall"
 	"time"
 
+	"embed"
+
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed templates
+var templateFiles embed.FS
+
+//go:embed static
+var staticFiles embed.FS
 
 const (
 	KB = 1024
@@ -37,16 +46,17 @@ type FileEntry struct {
 	Size        int64
 	SizeHuman   string
 	NoOfContent string
-}
-
-type Data struct {
-    Files  []FileEntry
-    Crumbs []Crumb
+	Icon        string
 }
 
 type Crumb struct {
-    Name string
-    Path string
+	Name string
+	Path string
+}
+
+type Data struct {
+	Files  []FileEntry
+	Crumbs []Crumb
 }
 
 var bufPool = sync.Pool{
@@ -76,15 +86,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	tmpl, err := template.ParseFiles("./templates/index.html")
+	tmpl, err := template.ParseFS(templateFiles, "templates/index.html")
 	if err != nil {
 		fmt.Printf("Unable to parse template: %s\n", err)
 		os.Exit(1)
 	}
 
+	staticSub, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		fmt.Printf("Unable to create static sub FS: %s\n", err)
+		os.Exit(1)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", homePage(serveRoot, tmpl))
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 
@@ -129,9 +145,29 @@ func getConfig() (Config, error) {
 		return config, err
 	}
 	if err := yaml.Unmarshal(configData, &config); err != nil {
-		return config, fmt.Errorf("Parsing config: %w", err)
+		return config, fmt.Errorf("parsing config: %w", err)
 	}
 	return config, nil
+}
+
+func iconClass(name string, isDir bool) string {
+	if isDir {
+		return "dir"
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".ico":
+		return "img"
+	case ".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv":
+		return "vid"
+	case ".mp3", ".flac", ".wav", ".ogg", ".aac", ".m4a":
+		return "aud"
+	case ".zip", ".tar", ".gz", ".bz2", ".rar", ".7z", ".xz":
+		return "arc"
+	case ".pdf", ".doc", ".docx", ".txt", ".md", ".odt", ".rtf":
+		return "doc"
+	default:
+		return "gen"
+	}
 }
 
 func getFiles(path string) ([]FileEntry, error) {
@@ -149,12 +185,13 @@ func getFiles(path string) ([]FileEntry, error) {
 		entry := FileEntry{
 			Name:  f.Name(),
 			IsDir: f.IsDir(),
+			Icon:  iconClass(f.Name(), f.IsDir()),
 		}
 
 		if f.IsDir() {
 			subEntries, err := os.ReadDir(filepath.Join(path, f.Name()))
 			if err == nil {
-				entry.NoOfContent = fmt.Sprintf("%d Items", len(subEntries))
+				entry.NoOfContent = fmt.Sprintf("%d items", len(subEntries))
 			}
 		} else {
 			info, err := f.Info()
@@ -169,9 +206,22 @@ func getFiles(path string) ([]FileEntry, error) {
 	return files, nil
 }
 
-func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
-	rootWithSep := serveRoot + string(filepath.Separator)
+func buildCrumbs(urlPath string) []Crumb {
+	segments := strings.Split(strings.Trim(urlPath, "/"), "/")
+	crumbs := make([]Crumb, 0, len(segments))
+	for i, seg := range segments {
+		if seg == "" {
+			continue
+		}
+		crumbs = append(crumbs, Crumb{
+			Name: seg,
+			Path: "/" + strings.Join(segments[:i+1], "/") + "/",
+		})
+	}
+	return crumbs
+}
 
+func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -185,7 +235,6 @@ func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-		_ = rootWithSep
 
 		info, err := os.Stat(requestedPath)
 		if err != nil {
@@ -204,31 +253,20 @@ func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
 		}
 
 		if !strings.HasSuffix(r.URL.Path, "/") {
-    http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
-    return
-}
+			http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+			return
+		}
 
 		files, err := getFiles(requestedPath)
 		if err != nil {
 			http.Error(w, "Could not read directory", http.StatusInternalServerError)
 			return
 		}
-		segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-crumbs := make([]Crumb, 0, len(segments))
-for i, seg := range segments {
-    if seg == "" {        // handles root "/" producing an empty segment
-        continue
-    }
-    crumbs = append(crumbs, Crumb{
-        Name: seg,
-        Path: "/" + strings.Join(segments[:i+1], "/"),
-    })
-}
 
-data := Data{
-    Files:  files,
-    Crumbs: crumbs,
-}
+		data := Data{
+			Files:  files,
+			Crumbs: buildCrumbs(r.URL.Path),
+		}
 
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()

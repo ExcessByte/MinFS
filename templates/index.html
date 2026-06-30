@@ -1,10 +1,6 @@
 <!doctype html>
 <html lang="en">
 	<head>
-		<link
-			rel="stylesheet"
-			href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
-		/>
 		<meta
 			name="viewport"
 			content="width=device-width, initial-scale=1.0, user-scalable=no"
@@ -15,28 +11,33 @@
 		<div class="wrap">
 			<nav class="nav">
 				<p class="title">MinFS</p>
-				<ol class="nav-links">
-					<li><a href="#">Settings</a></li>
-					<li><a href="#">Upload</a></li>
-				</ol>
 			</nav>
 			<div class="body">
 				<div class="sidebar">
 					<ol>
 						<li>
-							<a href="#" class="active"
-								><span class="ms">home</span> Home</a
-							>
+							<a href="#">
+								<i class="fa-regular fa-square-plus"></i>
+								Upload
+							</a>
 						</li>
 						<li>
-							<a href="#"
-								><span class="ms">favorite</span> Favourites</a
-							>
+							<a href="#" class="active">
+								<i class="fa-regular fa-house"></i>
+								Home
+							</a>
 						</li>
 						<li>
-							<a href="#"
-								><span class="ms">delete</span> Recycle Bin</a
-							>
+							<a href="#">
+								<i class="fa-regular fa-heart"></i>
+								Favourites
+							</a>
+						</li>
+						<li>
+							<a href="#">
+								<i class="fa-regular fa-trash-can"></i>
+								Recycle Bin
+							</a>
 						</li>
 					</ol>
 				</div>
@@ -51,13 +52,13 @@
 					<div class="grid">
 						{{range .Files}} {{if .IsDir}}
 						<a href="{{.Name}}/" class="card">
-							<span class="icon dir">folder</span>
+							<i class="fa-regular fa-folder"></i>
 							<span class="name">{{.Name}}</span>
 							<span class="meta">{{.NoOfContent}}</span>
 						</a>
 						{{else}}
 						<a href="{{.Name}}" class="card">
-							<span class="icon doc">description</span>
+							<i class="fa-regular fa-file-lines"></i>
 							<span class="name">{{.Name}}</span>
 							<span class="meta">{{.SizeHuman}}</span>
 						</a>
@@ -66,5 +67,6 @@
 				</div>
 			</div>
 		</div>
+		<script src="/static/index.js"></script>
 	</body>
 </html>
