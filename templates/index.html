@@ -42,9 +42,11 @@
 				</div>
 				<div class="content">
 					<div class="breadcrumb">
-						<span>{{.PathFromBaseDir}}</span>
-						<!--<span class="sep">/</span>
-						<span class="cur">All files</span>-->
+						<span><a href="/">...</a></span>
+						{{range .Crumbs}}
+						<span class="sep">/</span>
+						<span><a href="{{.Path}}">{{.Name}}</a></span>
+						{{end}}
 					</div>
 					<div class="grid">
 						{{range .Files}} {{if .IsDir}}

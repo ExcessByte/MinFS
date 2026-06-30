@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	. "fmt"
 	"html/template"
 	"net/http"
 	"os"
@@ -20,10 +19,10 @@ import (
 )
 
 const (
-    KB = 1024
-    MB = 1024 * KB
-    GB = 1024 * MB
-    TB = 1024 * GB
+	KB = 1024
+	MB = 1024 * KB
+	GB = 1024 * MB
+	TB = 1024 * GB
 )
 
 type Config struct {
@@ -33,16 +32,21 @@ type Config struct {
 }
 
 type FileEntry struct {
-    Name        string
-    IsDir       bool
-    Size        int64
-    SizeHuman   string
-    NoOfContent uint
+	Name        string
+	IsDir       bool
+	Size        int64
+	SizeHuman   string
+	NoOfContent string
 }
 
 type Data struct {
-	Files			[]FileEntry
-	PathFromBaseDir	string
+    Files  []FileEntry
+    Crumbs []Crumb
+}
+
+type Crumb struct {
+    Name string
+    Path string
 }
 
 var bufPool = sync.Pool{
@@ -52,7 +56,7 @@ var bufPool = sync.Pool{
 func main() {
 	config, err := getConfig()
 	if err != nil {
-		Printf("Unable to load config: %s\n", err)
+		fmt.Printf("Unable to load config: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -68,13 +72,13 @@ func main() {
 
 	serveRoot, err := filepath.Abs(config.Dir)
 	if err != nil {
-		Printf("Invalid directory (%s): %s\n", config.Dir, err)
+		fmt.Printf("Invalid directory (%s): %s\n", config.Dir, err)
 		os.Exit(1)
 	}
 
 	tmpl, err := template.ParseFiles("./templates/index.html")
 	if err != nil {
-		Printf("Unable to parse template: %s\n", err)
+		fmt.Printf("Unable to parse template: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -96,23 +100,23 @@ func main() {
 	defer stop()
 
 	go func() {
-		Printf("Starting server...\n")
-		Printf("Server running on %s:%d\n", config.Host, config.Port)
+		fmt.Printf("Starting server...\n")
+		fmt.Printf("Server running on http://%s:%d/\n", config.Host, config.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			Printf("Server error: %s\n", err)
+			fmt.Printf("Server error: %s\n", err)
 			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	Println("Shutting down, waiting for in-flight requests...")
+	fmt.Println("Shutting down, waiting for in-flight requests...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		Printf("Graceful shutdown failed: %s\n", err)
+		fmt.Printf("Graceful shutdown failed: %s\n", err)
 	}
-	Println("Server stopped")
+	fmt.Println("Server stopped")
 }
 
 func getConfig() (Config, error) {
@@ -131,38 +135,38 @@ func getConfig() (Config, error) {
 }
 
 func getFiles(path string) ([]FileEntry, error) {
-    dirContent, err := os.ReadDir(path)
-    if err != nil {
-        return nil, err
-    }
+	dirContent, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
 
-    files := make([]FileEntry, 0, len(dirContent))
-    for _, f := range dirContent {
-        if strings.HasPrefix(f.Name(), ".") {
-            continue
-        }
+	files := make([]FileEntry, 0, len(dirContent))
+	for _, f := range dirContent {
+		if strings.HasPrefix(f.Name(), ".") {
+			continue
+		}
 
-        entry := FileEntry{
-            Name:  f.Name(),
-            IsDir: f.IsDir(),
-        }
+		entry := FileEntry{
+			Name:  f.Name(),
+			IsDir: f.IsDir(),
+		}
 
-        if f.IsDir() {
-            subEntries, err := os.ReadDir(filepath.Join(path, f.Name()))
-            if err == nil {
-                entry.NoOfContent = uint(len(subEntries))
-            }
-        } else {
-            info, err := f.Info()
-            if err == nil {
-                entry.Size = info.Size()
-                entry.SizeHuman = humanSize(info.Size())
-            }
-        }
+		if f.IsDir() {
+			subEntries, err := os.ReadDir(filepath.Join(path, f.Name()))
+			if err == nil {
+				entry.NoOfContent = fmt.Sprintf("%d Items", len(subEntries))
+			}
+		} else {
+			info, err := f.Info()
+			if err == nil {
+				entry.Size = info.Size()
+				entry.SizeHuman = humanSize(info.Size())
+			}
+		}
 
-        files = append(files, entry)
-    }
-    return files, nil
+		files = append(files, entry)
+	}
+	return files, nil
 }
 
 func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
@@ -188,7 +192,7 @@ func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
 			if os.IsNotExist(err) {
 				http.Error(w, "Not found", http.StatusNotFound)
 			} else {
-				Printf("Stat failed (%s): %s\n", requestedPath, err)
+				fmt.Printf("Stat failed (%s): %s\n", requestedPath, err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 			}
 			return
@@ -199,14 +203,31 @@ func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
 			return
 		}
 
+		if !strings.HasSuffix(r.URL.Path, "/") {
+    http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+    return
+}
+
 		files, err := getFiles(requestedPath)
 		if err != nil {
 			http.Error(w, "Could not read directory", http.StatusInternalServerError)
 			return
 		}
-		data := Data{
-    Files:          files,
-    PathFromBaseDir: r.URL.Path,
+		segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+crumbs := make([]Crumb, 0, len(segments))
+for i, seg := range segments {
+    if seg == "" {        // handles root "/" producing an empty segment
+        continue
+    }
+    crumbs = append(crumbs, Crumb{
+        Name: seg,
+        Path: "/" + strings.Join(segments[:i+1], "/"),
+    })
+}
+
+data := Data{
+    Files:  files,
+    Crumbs: crumbs,
 }
 
 		buf := bufPool.Get().(*bytes.Buffer)
@@ -214,7 +235,7 @@ func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
 		defer bufPool.Put(buf)
 
 		if err := tmpl.Execute(buf, data); err != nil {
-			Printf("Template error: %s\n", err)
+			fmt.Printf("Template error: %s\n", err)
 			http.Error(w, "Template error", http.StatusInternalServerError)
 			return
 		}
@@ -226,16 +247,16 @@ func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
 }
 
 func humanSize(b int64) string {
-    switch {
-    case b < KB:
-        return fmt.Sprintf("%d B", b)
-    case b < MB:
-        return fmt.Sprintf("%.1f KB", float64(b)/KB)
-    case b < GB:
-        return fmt.Sprintf("%.1f MB", float64(b)/MB)
-    case b < TB:
-        return fmt.Sprintf("%.1f GB", float64(b)/TB)
-    default:
-        return fmt.Sprintf("%.1f TB", float64(b)/TB)
-    }
+	switch {
+	case b < KB:
+		return fmt.Sprintf("%d B", b)
+	case b < MB:
+		return fmt.Sprintf("%.1f KB", float64(b)/KB)
+	case b < GB:
+		return fmt.Sprintf("%.1f MB", float64(b)/MB)
+	case b < TB:
+		return fmt.Sprintf("%.1f GB", float64(b)/TB)
+	default:
+		return fmt.Sprintf("%.1f TB", float64(b)/TB)
+	}
 }

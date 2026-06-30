@@ -105,17 +105,18 @@ body {
 .breadcrumb {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	font-size: 13px;
-	color: rgba(255, 255, 240, 0.4);
+	gap: 2px;
 	margin-bottom: 18px;
+	font-size: 16px;
 }
 .breadcrumb span.sep {
 	opacity: 0.35;
 }
-.breadcrumb span.cur {
+
+.breadcrumb span a {
 	color: rgba(255, 255, 240, 0.75);
 }
+
 .grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -131,15 +132,12 @@ body {
 	flex-direction: column;
 	align-items: flex-start;
 	gap: 8px;
-	transition:
-		background 0.12s,
-		border-color 0.12s;
+	transition-duration: 0.5s;
 	text-decoration: none;
 	color: inherit;
 }
 .card:hover {
 	background: rgba(255, 255, 255, 0.08);
-	border-color: rgba(255, 255, 255, 0.14);
 }
 .icon {
 	font-family: "Material Symbols Rounded";
