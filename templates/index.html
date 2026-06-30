@@ -42,22 +42,22 @@
 				</div>
 				<div class="content">
 					<div class="breadcrumb">
-						<span>Home</span>
-						<span class="sep">/</span>
-						<span class="cur">All files</span>
+						<span>{{.PathFromBaseDir}}</span>
+						<!--<span class="sep">/</span>
+						<span class="cur">All files</span>-->
 					</div>
 					<div class="grid">
-						{{range .}} {{if .IsDir}}
+						{{range .Files}} {{if .IsDir}}
 						<a href="{{.Name}}/" class="card">
 							<span class="icon dir">folder</span>
 							<span class="name">{{.Name}}</span>
-							<span class="meta">14 items</span>
+							<span class="meta">{{.NoOfContent}}</span>
 						</a>
 						{{else}}
 						<a href="{{.Name}}" class="card">
 							<span class="icon doc">description</span>
 							<span class="name">{{.Name}}</span>
-							<span class="meta">{{.Size}} bytes</span>
+							<span class="meta">{{.SizeHuman}}</span>
 						</a>
 						{{end}} {{end}}
 					</div>
@@ -66,11 +66,3 @@
 		</div>
 	</body>
 </html>
-
-<!--<div class="container">
-			{{range .}} {{if .IsDir}}
-			<a href="{{.Name}}/">{{.Name}}</a>
-			{{else}}
-			<a href="{{.Name}}">{{.Name}}</a>
-			{{end}} {{end}}
-		</div>-->
