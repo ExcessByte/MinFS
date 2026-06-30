@@ -1,57 +1,114 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-const HOME_DIR string = "/home/eric"
+const configFile = "config.yaml"
 
-var tmpl = template.Must(template.ParseFiles("./templates/index.html"))
+type Config struct {
+	Dir  string `yaml:"dir"`
+	Host string `yaml:"host"`
+	Port uint16 `yaml:"port"`
+}
 
 func main() {
-	http.HandleFunc("/", homePage)
+	config, err := getConfig()
+	if err != nil {
+		log.Fatalf("unable to load config: %v", err)
+	}
+
+	if config.Host == "" {
+		config.Host = "localhost"
+	}
+	if config.Port == 0 {
+		config.Port = 8080
+	}
+	if config.Dir == "" {
+		config.Dir = "."
+	}
+
+	serveRoot, err := filepath.Abs(config.Dir)
+	if err != nil {
+		log.Fatalf("invalid dir %q: %v", config.Dir, err)
+	}
+
+	tmpl, err := template.ParseFiles("./templates/index.html")
+	if err != nil {
+		log.Fatalf("unable to parse template: %v", err)
+	}
+
+	http.HandleFunc("/", homePage(serveRoot, tmpl))
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	fmt.Printf("Starting server at %s\n", addr)
+	log.Fatal(http.ListenAndServe(addr, nil))
+}
+
+func getConfig() (Config, error) {
+	var config Config
+	configData, err := os.ReadFile(configFile)
+	if err != nil {
+		return config, err
+	}
+	if err := yaml.Unmarshal(configData, &config); err != nil {
+		return config, fmt.Errorf("parsing config: %w", err)
+	}
+	return config, nil
 }
 
 func getFiles(path string) ([]os.DirEntry, error) {
-    dir_content, err := os.ReadDir(path)
-    if err != nil {
-        return nil, err
-    }
-    files := make([]os.DirEntry, 0, len(dir_content))
-    for _, f := range dir_content {
-        if strings.HasPrefix(f.Name(), ".") {
-            continue
-        }
-        files = append(files, f)
-    }
-    return files, nil
+	dirContent, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]os.DirEntry, 0, len(dirContent))
+	for _, f := range dirContent {
+		if strings.HasPrefix(f.Name(), ".") {
+			continue
+		}
+		files = append(files, f)
+	}
+	return files, nil
 }
 
-func homePage(w http.ResponseWriter, r *http.Request) {
-	path := HOME_DIR + r.URL.Path
+func homePage(serveRoot string, tmpl *template.Template) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		requestedPath := filepath.Join(serveRoot, filepath.FromSlash(r.URL.Path))
+		if !strings.HasPrefix(requestedPath, serveRoot+string(filepath.Separator)) &&
+			requestedPath != serveRoot {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
+		info, err := os.Stat(requestedPath)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		if !info.IsDir() {
+			http.ServeFile(w, r, requestedPath)
+			return
+		}
+
+		files, err := getFiles(requestedPath)
+		if err != nil {
+			http.Error(w, "could not read directory", http.StatusInternalServerError)
+			return
+		}
+
+		if err := tmpl.Execute(w, files); err != nil {
+			log.Printf("template error: %v", err)
+		}
 	}
-
-	if !info.IsDir() {
-		http.ServeFile(w, r, path)
-		return
-	}
-
-	files, err := getFiles(path)
-	if err != nil {
-		http.Error(w, "could not read directory", http.StatusInternalServerError)
-		return
-	}
-
-	tmpl.Execute(w, files)
 }
