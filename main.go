@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"html/template"
 	"log"
@@ -12,11 +13,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const configFile = "config.yaml"
 
 type Config struct {
-	Dir  string `yaml:"dir"`
-	Host string `yaml:"host"`
+	Dir  string `yaml:"base-dir"`
+	Host string `yaml:"hostname"`
 	Port uint16 `yaml:"port"`
 }
 
@@ -55,8 +55,10 @@ func main() {
 }
 
 func getConfig() (Config, error) {
+	configPath := flag.String("c", "./config.yaml", "Location of the config file")
+	flag.Parse()
 	var config Config
-	configData, err := os.ReadFile(configFile)
+	configData, err := os.ReadFile(*configPath)
 	if err != nil {
 		return config, err
 	}
